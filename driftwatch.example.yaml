@@ -1,0 +1,30 @@
+# driftwatch.example.yaml
+# Declare the expected state of your services here.
+# Run `driftwatch check` to compare against live deployments.
+
+version: "1"
+
+services:
+  - name: api
+    image: myrepo/api:v1.4.2
+    replicas: 3
+    environment:
+      LOG_LEVEL: info
+      DB_HOST: postgres.internal
+    ports:
+      - "8080:8080"
+
+  - name: worker
+    image: myrepo/worker:v1.4.2
+    replicas: 2
+    environment:
+      QUEUE_URL: amqp://rabbitmq.internal
+      LOG_LEVEL: warn
+    ports: []
+
+  - name: scheduler
+    image: myrepo/scheduler:v1.2.0
+    replicas: 1
+    environment:
+      TZ: UTC
+    ports: []
