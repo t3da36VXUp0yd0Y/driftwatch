@@ -1,55 +1,58 @@
+// Package runner wires together config loading, Docker inspection,
+// drift detection, optional filtering, and report generation.
 package runner
 
 import (
 	"context"
-	"fmt"
+	"io"
 
-	"github.com/user/driftwatch/internal/config"
-	"github.com/user/driftwatch/internal/docker"
-	"github.com/user/driftwatch/internal/drift"
-	"github.com/user/driftwatch/internal/report"
+	"github.com/example/driftwatch/internal/config"
+	"github.com/example/driftwatch/internal/docker"
+	"github.com/example/driftwatch/internal/drift"
+	"github.com/example/driftwatch/internal/filter"
+	"github.com/example/driftwatch/internal/report"
 )
 
-// Runner orchestrates the full drift detection pipeline.
+// Runner orchestrates a single drift-check pass.
 type Runner struct {
-	cfg    *config.Config
-	client DockerClient
+	cfg        *config.Config
+	client     docker.Client
+	filterOpts filter.Options
+	reportOpts report.Options
 }
 
-// DockerClient is the interface Runner depends on for container inspection.
-type DockerClient interface {
-	GetContainerInfo(ctx context.Context, name string) (*docker.ContainerInfo, error)
-}
-
-// New creates a Runner with the given config and docker client.
-func New(cfg *config.Config, client DockerClient) *Runner {
-	return &Runner{cfg: cfg, client: client}
-}
-
-// Run executes drift detection for all configured services and returns a Report.
-func (r *Runner) Run(ctx context.Context, format report.Format) (*report.Report, error) {
-	results := make([]drift.Result, 0, len(r.cfg.Services))
-
-	for _, svc := range r.cfg.Services {
-		info, err := r.client.GetContainerInfo(ctx, svc.Container)
-		if err != nil {
-			// Treat fetch error as service not running.
-			results = append(results, drift.Result{
-				Service: svc.Name,
-				Drifted: true,
-				Reason:  fmt.Sprintf("could not inspect container: %v", err),
-			})
-			continue
-		}
-
-		result := drift.Detect(svc, info)
-		results = append(results, result)
-	}
-
-	rep, err := report.New(results, format)
+// New constructs a Runner from the provided config path and options.
+func New(cfgPath string, fo filter.Options, ro report.Options) (*Runner, error) {
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		return nil, fmt.Errorf("building report: %w", err)
+		return nil, err
+	}
+	cli, err := docker.NewClient()
+	if err != nil {
+		return nil, err
+	}
+	return &Runner{cfg: cfg, client: cli, filterOpts: fo, reportOpts: ro}, nil
+}
+
+// Run executes the full drift-check pipeline and writes the report to w.
+// It returns true when drift is detected in any service.
+func (r *Runner) Run(ctx context.Context, w io.Writer) (bool, error) {
+	running, err := r.client.ListContainers(ctx)
+	if err != nil {
+		return false, err
 	}
 
-	return rep, nil
+	results := drift.Detect(r.cfg.Services, running)
+	results = filter.Apply(results, r.filterOpts)
+
+	rep, err := report.New(results, r.reportOpts)
+	if err != nil {
+		return false, err
+	}
+
+	if err := rep.Write(w); err != nil {
+		return false, err
+	}
+
+	return drift.HasDrift(results), nil
 }
