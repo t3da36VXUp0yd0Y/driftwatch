@@ -1,60 +1,34 @@
 package drift
 
-import (
-	"fmt"
-
-	"github.com/user/driftwatch/internal/config"
-	"github.com/user/driftwatch/internal/docker"
-)
-
-// Result describes the drift status of a single service.
+// Result holds the drift detection outcome for a single service.
 type Result struct {
-	ServiceName    string
-	ExpectedImage  string
-	ActualImage    string
-	Running        bool
-	Drifted        bool
-	Reason         string
+	Service  string
+	Expected string
+	Actual   string
+	Drifted  bool
+	Mounts   []string
+	Labels   map[string]string
+	Ports    []string
+	Env      []string
 }
 
-// Detect compares declared config against the actual running containers and
-// returns a slice of Results, one per declared service.
-func Detect(services []config.Service, running map[string]docker.ContainerInfo) []Result {
-	results := make([]Result, 0, len(services))
-
-	for _, svc := range services {
+// Detect compares expected image tags against actual running images.
+func Detect(expected map[string]string, actual map[string]string) []Result {
+	var results []Result
+	for service, image := range expected {
+		actualImage, running := actual[service]
 		r := Result{
-			ServiceName:   svc.Name,
-			ExpectedImage: svc.Image,
+			Service:  service,
+			Expected: image,
+			Actual:   actualImage,
+			Drifted:  !running || actualImage != image,
 		}
-
-		info, found := running[svc.Name]
-		if !found {
-			r.Running = false
-			r.Drifted = true
-			r.Reason = fmt.Sprintf("service %q is not running", svc.Name)
-			results = append(results, r)
-			continue
-		}
-
-		r.Running = true
-		r.ActualImage = info.Image
-
-		if info.Image != svc.Image {
-			r.Drifted = true
-			r.Reason = fmt.Sprintf("image mismatch: expected %q, got %q", svc.Image, info.Image)
-		} else {
-			r.Drifted = false
-			r.Reason = "ok"
-		}
-
 		results = append(results, r)
 	}
-
 	return results
 }
 
-// HasDrift returns true if any result in the slice is drifted.
+// HasDrift returns true if any result in the slice has drifted.
 func HasDrift(results []Result) bool {
 	for _, r := range results {
 		if r.Drifted {
