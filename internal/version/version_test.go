@@ -71,3 +71,17 @@ func TestInfo_String_Format(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, s)
 	}
 }
+
+func TestGet_ReturnsCopy(t *testing.T) {
+	version.Version = "1.0.0"
+	version.Commit = "aabbccdd"
+	version.Date = "2024-01-01T00:00:00Z"
+
+	info1 := version.Get()
+	version.Version = "2.0.0"
+	info2 := version.Get()
+
+	if info1.Version == info2.Version {
+		t.Errorf("expected Get() to reflect updated version, got same value %q for both calls", info1.Version)
+	}
+}
