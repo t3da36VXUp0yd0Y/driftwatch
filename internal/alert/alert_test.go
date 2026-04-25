@@ -2,6 +2,7 @@ package alert_test
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/driftwatch/internal/alert"
@@ -78,5 +79,21 @@ func TestWrite_Warning(t *testing.T) {
 	}
 	if buf.Len() == 0 {
 		t.Error("expected output for LevelWarning")
+	}
+}
+
+func TestWrite_CriticalContainsLevel(t *testing.T) {
+	var buf bytes.Buffer
+	a := alert.Alert{
+		Level:      alert.LevelCritical,
+		DriftCount: 4,
+		TotalCount: 4,
+		Thresholds: alert.Thresholds{Warn: 2, Critical: 4},
+	}
+	if err := alert.Write(&buf, a); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), string(alert.LevelCritical)) {
+		t.Errorf("expected output to contain %q, got %q", alert.LevelCritical, buf.String())
 	}
 }
